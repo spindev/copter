@@ -5,9 +5,9 @@ import os
 import lib.XboxController as XboxController
 
 MIN = 1000
-MAX = 2500
+MAX = 2000
 
-SPEED = 1000
+SPEED = MIN
 
 STEP = 100
 SLEEP_TIME = 0.5
@@ -35,6 +35,7 @@ def calibrate():
     return
 
 def finish():
+    print("shutdown...")
     setSpeed(0)
     pi.stop()
     xboxCont.stop()
@@ -46,16 +47,35 @@ def startCallBack(value):
 
     calibrate()
 
+def backCallBack(value):
+    if value == 0:
+        return
+
+    finish()
+
 def dpadCallBack(value):
     global SPEED
 
-    if(value[0] == 1 and SPEED < MAX):
+    if(value[1] == 1 and SPEED < MAX):
         SPEED = SPEED + STEP
         setSpeed(SPEED)
 
-    if(value[0] == -1 and SPEED > MIN):
+    if(value[1] == -1 and SPEED > MIN):
         SPEED = SPEED - STEP
         setSpeed(SPEED)
+      
+def lthumbCallBack(value):
+    global SPEED
+
+    SPEED = (1 + value) * 1250;
+
+    if SPEED < MAX and SPEED > MIN:
+        setSpeed(SPEED)
+
+def xboxCallBack(value):
+    global SPEED
+
+    SPEED = MIN
 
 # Main
 
@@ -70,8 +90,10 @@ xboxCont = XboxController.XboxController(
     invertYAxis = True)
 
 xboxCont.setupControlCallback(xboxCont.XboxControls.START, startCallBack)
-xboxCont.setupControlCallback(xboxCont.XboxControls.BACK, finish)
+xboxCont.setupControlCallback(xboxCont.XboxControls.BACK, backCallBack)
 xboxCont.setupControlCallback(xboxCont.XboxControls.DPAD, dpadCallBack)
+xboxCont.setupControlCallback(xboxCont.XboxControls.LTHUMBY, lthumbCallBack)
+xboxCont.setupControlCallback(xboxCont.XboxControls.XBOX, xboxCallBack)
 
 xboxCont.start()
 
