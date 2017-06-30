@@ -5,7 +5,7 @@ import os
 import lib.XboxController as XboxController
 
 MIN = 1000
-MAX = 2000
+MAX = 2500
 
 SPEED = MIN
 
@@ -17,6 +17,8 @@ esc2 = 13
 esc3 = 19
 esc4 = 26 
 
+calibrated = False
+
 def setSpeed(value):
     pi.set_servo_pulsewidth(esc1, value)
     pi.set_servo_pulsewidth(esc2, value)
@@ -25,7 +27,12 @@ def setSpeed(value):
     print("speed: ") + str(value)
 
 def calibrate():
+    global calibrated
+    if calibrated == True:
+        return
+
     print("Calibrate...")
+    calibrated = True
     setSpeed(MAX)
     time.sleep(2)
     setSpeed(MIN)
