@@ -2,79 +2,84 @@ import time
 import pigpio 
 import RPi.GPIO as GPIO
 import os
-import lib.XboxController as XboxController
-import lib.Adafruit_BMP085 as barometer
+import lib.xbox as xbox
 import thread
 import lib.gyroa as gyro
 
 MIN = 1000
 MAX = 2500
 
-FRONT_SPEED = MIN
-BACK_SPEED = MIN
+SPEED = MIN
 
-STEP = 20
+STEP = 100
+CONTROL_STEP = 5
+
 SLEEP_TIME = 0.5
 
-esc1 = 6
-esc2 = 13
-esc3 = 19
-esc4 = 26 
+front_l = 19
+front_r = 6
 
-front_l = esc3
-front_r = esc1
+back_l = 26
+back_r = 13
 
-back_l = esc4
-back_r = esc2
+speeds = {front_l : MIN, front_r : MIN, back_l : MIN, back_r : MIN}
+
+# front_l up -> x < 0
+# front_r up -> y > 0
 
 calibrated = False
+fligthtModeEnabled = False
+
+def setAbsoluteSpeed(value):
+    pi.set_servo_pulsewidth(front_l, value)
+    pi.set_servo_pulsewidth(front_r, value)
+    pi.set_servo_pulsewidth(back_l, value)
+    pi.set_servo_pulsewidth(back_r, value)
 
 def setSpeedForAll(value):
-    setSpeedFront(value)
-    setSpeedBack(value)
+    global SPEED
+    global speeds
 
-def setSpeedFront(value):
-    global FRONT_SPEED
+    SPEED = SPEED + value
 
-    if FRONT_SPEED + value >= MAX or FRONT_SPEED + value < MIN:
+    if SPEED > MAX or SPEED < MIN:
         return
 
-    FRONT_SPEED = FRONT_SPEED + value
-    
-    pi.set_servo_pulsewidth(front_l, FRONT_SPEED)
-    pi.set_servo_pulsewidth(front_r, FRONT_SPEED)
-    print("front speed: ") + str(FRONT_SPEED)
+    speeds[front_l] = SPEED
+    speeds[front_r] = SPEED
+    speeds[back_l] = SPEED
+    speeds[back_r] = SPEED
 
-def setSpeedBack(value):
-    global BACK_SPEED
+    print("current speed: " + str(SPEED))
 
-    if BACK_SPEED + value >= MAX or BACK_SPEED + value < MIN:
+    setAbsoluteSpeed(SPEED)
+
+def setSpeed(esc, value):
+    global speeds
+
+    speeds[esc] = speeds[esc] + value
+
+    if speeds[esc] > MAX or speeds[esc] < MIN or speeds[esc] > SPEED + STEP:
         return
 
-    BACK_SPEED = BACK_SPEED + value
-    
-    pi.set_servo_pulsewidth(back_l, BACK_SPEED)
-    pi.set_servo_pulsewidth(back_r, BACK_SPEED)
-    print("back speed: ") + str(BACK_SPEED)
+    print(str(esc) + " speed: " + str(speeds[esc]))
+
+    pi.set_servo_pulsewidth(esc, speeds[esc])
 
 def calibrate():
     global calibrated
+
     if calibrated == True:
         return
 
     print("calibrate...")
-    calibrated = True
-    pi.set_servo_pulsewidth(front_l, MAX)
-    pi.set_servo_pulsewidth(front_r, MAX)
-    pi.set_servo_pulsewidth(back_l, MAX)
-    pi.set_servo_pulsewidth(back_r, MAX)
+    setAbsoluteSpeed(MAX)
     time.sleep(2)
-    pi.set_servo_pulsewidth(front_l, MIN)
-    pi.set_servo_pulsewidth(front_r, MIN)
-    pi.set_servo_pulsewidth(back_l, MIN)
-    pi.set_servo_pulsewidth(back_r, MIN)
+    setAbsoluteSpeed(MIN)
     time.sleep(2)
     print("lets fly...")
+
+    calibrated = True
 
     return
 
@@ -82,26 +87,23 @@ def shutdown():
     print("shutdown...")
     restart()
     pi.stop()
-    xboxCont.stop()
+    joy.close()
     os._exit(0)
 
 def restart():
-    pi.set_servo_pulsewidth(front_l, 0)
-    pi.set_servo_pulsewidth(front_r, 0)
-    pi.set_servo_pulsewidth(back_l, 0)
-    pi.set_servo_pulsewidth(back_r, 0)
+    setAbsoluteSpeed(0)
 
 def setAlltoMin():
-    global BACK_SPEED
-    global FRONT_SPEED
+    global SPEED
+    global fligthtModeEnabled
+    
+    SPEED = MIN
 
-    BACK_SPEED = MIN
-    FRONT_SPEED = MIN
+    print("current speed: " + str(SPEED))
 
-    pi.set_servo_pulsewidth(front_l, MIN)
-    pi.set_servo_pulsewidth(front_r, MIN)
-    pi.set_servo_pulsewidth(back_l, MIN)
-    pi.set_servo_pulsewidth(back_r, MIN)
+    setAbsoluteSpeed(SPEED)
+        
+    fligthtModeEnabled = False
 
 def startCallBack(value):
     if value == 0:
@@ -116,70 +118,62 @@ def backCallBack(value):
     setAlltoMin()
 
 def dpadCallBack(value):
-    global SPEED
+    global fligthtModeEnabled
 
-    setSpeedForAll(STEP * value[1])
+    fligthtModeEnabled = True
+    
+    setSpeedForAll(value)
 
 def xboxCallBack(value):
     shutdown()
     
     return
 
-def fligthControl(value):
-    try:
-        while True:
-            print("x-rotaion: ") + str(gyro.getXrotation())
-            print("y-rotaion: ") + str(gyro.getYrotation())
-
-    except KeyboardInterrupt:
-        print("stopping fligthcontrol...")
-
-def rthumbCallBack(value):
-    if value > 1:
-       setSpeedFront(STEP)
-
-    if value == -1:
-       setSpeedFront(-1 * STEP)
-
-def lthumbCallBack(value):
-    if value > 1:
-       setSpeedBack(STEP)
-
-    if value == -1:
-       setSpeedBack(-1 * STEP)
-
 # Main
 
 GPIO.setmode(GPIO.BCM)
 pi = pigpio.pi()
 
-#bmp = barometer.BMP085(0x77, 3)
-
-xboxCont = XboxController.XboxController(
-    controllerCallBack = None,
-    joystickNo = 0,
-    deadzone = 0.1,
-    scale = 1,
-    invertYAxis = True)
-
-#xboxCont.setupControlCallback(xboxCont.XboxControls.START, startCallBack)
-#xboxCont.setupControlCallback(xboxCont.XboxControls.BACK, backCallBack)
-#xboxCont.setupControlCallback(xboxCont.XboxControls.DPAD, dpadCallBack)
-#xboxCont.setupControlCallback(xboxCont.XboxControls.RTHUMBY, rthumbCallBack)
-#xboxCont.setupControlCallback(xboxCont.XboxControls.LTHUMBY, lthumbCallBack)
-#xboxCont.setupControlCallback(xboxCont.XboxControls.XBOX, xboxCallBack)
+joy = xbox.Joystick()
 
 restart()
 
-thread.start_new_thread(fligthControl, (True,))
-
 print("init successfull...")
-
-xboxCont.start()
 
 try:
 	while True:
-		time.sleep(SLEEP_TIME)
+            time.sleep(0.08)
+
+            if joy.Start():
+                calibrate()
+            
+            if joy.Back():
+                setAlltoMin()
+
+            if joy.Guide():
+                shutdown()
+
+            if joy.dpadUp():
+                dpadCallBack(STEP)
+
+            if joy.dpadDown():
+                dpadCallBack(-STEP)
+
+            #print("test")
+            if fligthtModeEnabled == False:
+                continue
+
+            if gyro.getXrotation() < 0:
+                setSpeed(back_r, CONTROL_STEP)
+
+            if gyro.getXrotation() > 0:
+                setSpeed(front_l, CONTROL_STEP)
+
+            if gyro.getYrotation() > 0:
+                setSpeed(back_l, CONTROL_STEP)
+
+            if gyro.getYrotation() < 0:
+                setSpeed(front_r, CONTROL_STEP)
 
 except KeyboardInterrupt:
 	print("interrupt...")
